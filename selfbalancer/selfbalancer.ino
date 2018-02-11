@@ -32,6 +32,11 @@ void dmpDataReady() {
     mpuInterrupt = true;
 }
 
+enum MotorMode {
+  DIRECT,
+  REVERSE
+};
+
 class Motor {
   public:
   void setup() {
@@ -39,13 +44,18 @@ class Motor {
     pinMode(pin2, OUTPUT);
     pinMode(pin_pwm, OUTPUT);
   }
+  void mode(MotorMode mode) {
+    mode_ = mode;
+  }
   /**
    * \param speed: [-max speed, max speed]
    */
   void move(float speed) {
     int pwm_value = getPmwValue(speed);
         
-   
+    if (mode_ == REVERSE) {
+      speed = -speed;
+    }
     if (speed == 0) {
       digitalWrite(pin1, LOW);
       digitalWrite(pin2, LOW);
@@ -61,27 +71,24 @@ class Motor {
   }
   private:
   int getPmwValue(float speed) {
-    float abs_speed = abs(speed);
-    if (abs_speed < 0.3) return 0;
-    float pwm_jump = (255 - min_pwm_value_) / (max_speed_value - 1);
-    float pwm = (abs_speed - 1) * pwm_jump + min_pwm_value_;
-    if (pwm < min_pwm_value_)
-      pwm = min_pwm_value_;
-    if (pwm > 255) 
-      pwm = 255;
+    float pwm = abs(speed);
+    if (pwm < min_pwm_value_) return 0;
+    if (pwm > 255) return 255;
     return pwm;
   }
   private:
+  MotorMode mode_ = DIRECT;
   int pin1 = 7;
   int pin2 = 8;
   int pin_pwm = 9;
-  int min_pwm_value_ = 135;  // this is speed 1
-  float max_speed_value = 5;  // this will map with pwm 255
-  
+  int min_pwm_value_ = 140;  // anything less than this will be 0
 };
 
 class PidController {
  public:
+ PidController(float balance = 0.0) {
+  balance_ = balance;
+ }
   float computeControl(float measure) {
     float error = balance_ - measure;
     float p_term = kp_ * error;
@@ -96,18 +103,19 @@ class PidController {
   float integrated_error_ = 0.0;
   float last_error_ = 0.0;
   float balance_ = 0.0;
-  float kp_ = 2.0;
-  float ki_ = 0.01;
-  float kd_ = 0.5;
+  float kp_ = 580.0;
+  float ki_ = 0.0;
+  float kd_ = 0.0;
 };
 
 Motor motor;
-PidController pid_controller;
+PidController pid_controller(-2.5);
 MPU6050 mpu;
 long initial_time;
 
 void setup() {
   motor.setup();
+  motor.mode(REVERSE);
   initial_time = millis();
 
   // join I2C bus (I2Cdev library doesn't do this automatically)
@@ -209,27 +217,27 @@ void loop() {
 //    Serial.print("\t");
 //    Serial.println(ypr[2] * 180/M_PI);
 
-    int update_motor_interval = 1;  // ms
+    int update_motor_interval = 0;  // ms
     // update every x ms
     unsigned long current_time = millis();
     if (current_time - last_update > update_motor_interval) {
       float measure = ypr[2] * 180 / M_PI;
       float control_variable = pid_controller.computeControl(measure);
-      if ((print_control++ % 10) == 0) {
+      //if ((print_control++ % 10) == 0) {
         Serial.print("measured angle: ");Serial.print(measure); Serial.print("\t"); Serial.print("control: ");Serial.println(control_variable);
-      }
+     // }
       if (current_time - initial_time > 10000) {
         motor.move(control_variable);
       }
       last_update = current_time;
     }
   }
-
-    
- /* motor.move(0);
-  for (int i = -3; i <= 3; i++) {
+/*
+ 
+  motor.move(0);
+  for (int i = -150; i <=200; i+=10) {
     Serial.println(i);
-    motor.move(0);
+    motor.move(i);
     delay(2000);
   }
   */
